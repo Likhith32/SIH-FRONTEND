@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,6 +13,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ArrowLeft, AlertTriangle, Send, MessageSquare, Phone, Mail, MapPin, Clock, Users, Droplets, Activity } from "lucide-react"
 import Link from "next/link"
 import { useHealth } from "@/lib/health-context"
+
+// In a real app, replace this with your actual backend URL
+const API_BASE = "http://localhost:3001" 
 
 export default function AlertsPage() {
   const [newAlert, setNewAlert] = useState({
@@ -27,7 +30,24 @@ export default function AlertsPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const { alerts, addAlert, updateAlertStatus } = useHealth()
+  const { alerts, setAlerts, addAlert, updateAlertStatus } = useHealth()
+
+  // Load alerts from backend on mount
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/alerts`)
+        if (!response.ok) {
+          throw new Error("Failed to fetch alerts from backend")
+        }
+        const backendAlerts = await response.json()
+        setAlerts(backendAlerts) // Assuming setAlerts exists in your context
+      } catch (error) {
+        console.error("Error fetching alerts:", error)
+      }
+    }
+    fetchAlerts()
+  }, [setAlerts])
 
   const handleChannelToggle = (channel: string) => {
     setNewAlert((prev) => ({
@@ -43,19 +63,27 @@ export default function AlertsPage() {
     setIsSubmitting(true)
 
     try {
-      // 1️⃣ Add alert locally for a fast UI update
-      addAlert({
-        title: newAlert.title,
-        message: newAlert.message,
-        severity: newAlert.severity as "low" | "medium" | "high" | "critical",
-        location: newAlert.location,
-        status: "active",
-        channels: newAlert.channels,
+      // 1️⃣ Send new alert to the backend API
+      const response = await fetch(`${API_BASE}/api/alerts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...newAlert,
+          status: "active",
+          timestamp: new Date().toISOString(),
+        }),
       })
 
-      // 2️⃣ Send Twilio SMS if phone provided
+      if (!response.ok) {
+        throw new Error("Failed to create alert on backend")
+      }
+
+      const savedAlert = await response.json()
+      addAlert(savedAlert) // Add the new alert (with its backend ID) to the local context
+
+      // 2️⃣ Send Twilio SMS if phone provided (existing logic)
       if (newAlert.healthOfficerPhone) {
-        const response = await fetch("/api/sendAlert", {
+        const twilioResponse = await fetch("/api/sendAlert", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -68,15 +96,15 @@ export default function AlertsPage() {
           }),
         })
 
-        const data = await response.json()
-
-        if (response.ok) {
-          alert(`Alert sent successfully via Twilio! SID: ${data.sid}`)
+        if (!twilioResponse.ok) {
+          const data = await twilioResponse.json()
+          console.error(`Failed to send Twilio alert: ${data.error}`)
         } else {
-          alert(`Failed to send Twilio alert: ${data.error}`)
+          const data = await twilioResponse.json()
+          console.log(`Alert sent successfully via Twilio! SID: ${data.sid}`)
         }
       } else {
-        alert("Alert saved and sent to dashboard channels!")
+        console.log("Alert saved and sent to dashboard channels!")
       }
 
       // 3️⃣ Reset form
@@ -90,15 +118,30 @@ export default function AlertsPage() {
         healthOfficerPhone: "",
       })
     } catch (error) {
-      console.error(error)
-      alert("Something went wrong while sending the alert.")
+      console.error("Something went wrong while sending the alert:", error)
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const handleResolveAlert = (alertId: string) => {
-    updateAlertStatus(alertId, "resolved")
+  const handleResolveAlert = async (alertId: string) => {
+    try {
+      // Send resolution request to the backend API
+      const response = await fetch(`${API_BASE}/api/alerts/${alertId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "resolved" }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to resolve alert on backend")
+      }
+      
+      updateAlertStatus(alertId, "resolved")
+      console.log(`Alert ${alertId} resolved successfully.`)
+    } catch (error) {
+      console.error("Error resolving alert:", error)
+    }
   }
 
   const getSeverityColor = (severity: string) => {
