@@ -283,34 +283,30 @@ export default function DataCollectionPage() {
     }
   }
 
-  const handleCsvSubmit = async () => {
+  cconst handleCsvSubmit = async () => {
   if (!canPerformActions(user)) return alert(t.alertNoPermission)
   if (!csvFile) return alert(t.csvAlertNoFile)
 
-  const formData = new FormData()
-  formData.append("file", csvFile)
-
   try {
-    const response = await fetch("http://localhost:5000/predict_csv", {
+    // Optional: validate headers before upload
+    await validateCsv(csvFile)
+
+    const formData = new FormData()
+    formData.append("file", csvFile)
+
+    const response = await fetch("https://sih-backend-vjdd.onrender.com/upload_csv", {
       method: "POST",
-      body: formData, // no need for Content-Type header; browser sets it automatically
+      body: formData,
     })
 
-    if (!response.ok) throw new Error("CSV Prediction Failed")
+    if (!response.ok) {
+      throw new Error(`Backend error: ${response.statusText}`)
+    }
 
-    // The response will be a file download
-    const blob = await response.blob()
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = "predicted_analysis.csv"
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    window.URL.revokeObjectURL(url)
-  } catch (err) {
-    console.error(err)
-    alert(t.csvAlertError)
+    const result = await response.json()
+    alert(`✅ Backend connected!\nMessage: ${result.message || "Upload success"}`)
+  } catch (err: any) {
+    alert(`❌ Upload failed: ${err.message}`)
   }
 }
 
