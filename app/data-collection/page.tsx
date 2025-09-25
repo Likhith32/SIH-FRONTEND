@@ -251,7 +251,10 @@ export default function DataCollectionPage() {
   // Submit manual form
   const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!canPerformActions(user)) return alert(t.alertNoPermission)
+    if (!canPerformActions(user)) {
+      console.warn(t.alertNoPermission)
+      return
+    }
 
     try {
       const dataToSubmit = {
@@ -259,20 +262,22 @@ export default function DataCollectionPage() {
         ashaWorker: user?.role === "ASHA Worker" ? user.name : formData.ashaWorker,
       }
       const payload = [{ ...mapSymptomsToFeatures(dataToSubmit) }]
-      const response = await fetch("http://localhost:5000/predict", {
+
+      // Updated to use the deployed backend URL
+      const response = await fetch("https://sih-backend-vjdd.onrender.com/predict", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       })
+
       if (!response.ok) throw new Error("Prediction failed")
 
       const result = await response.json()
       addHealthData({ ...dataToSubmit, riskScore: result[0].riskLevel })
-      alert(t.alertSuccess(result[0].riskLevel))
+      console.log(t.alertSuccess(result[0].riskLevel))
       setFormData({ householdId: "", location: "", ashaWorker: "", symptoms: [], waterSource: "", sanitationAccess: "", notes: "", healthOfficerPhone: "" })
     } catch (err) {
-      console.error(err)
-      alert(t.alertError)
+      console.error(t.alertError, err)
     }
   }
 
@@ -283,38 +288,48 @@ export default function DataCollectionPage() {
     }
   }
 
-  cconst handleCsvSubmit = async () => {
-  if (!canPerformActions(user)) return alert(t.alertNoPermission)
-  if (!csvFile) return alert(t.csvAlertNoFile)
-
-  try {
-    // Optional: validate headers before upload
-    await validateCsv(csvFile)
+  const handleCsvSubmit = async () => {
+    if (!canPerformActions(user)) {
+      console.warn(t.alertNoPermission)
+      return
+    }
+    if (!csvFile) {
+      console.warn(t.csvAlertNoFile)
+      return
+    }
 
     const formData = new FormData()
     formData.append("file", csvFile)
 
-    const response = await fetch("https://sih-backend-vjdd.onrender.com/upload_csv", {
-      method: "POST",
-      body: formData,
-    })
+    try {
+      // Updated to use the deployed backend URL
+      const response = await fetch("https://sih-backend-vjdd.onrender.com/predict_csv", {
+        method: "POST",
+        body: formData, // no need for Content-Type header; browser sets it automatically
+      })
 
-    if (!response.ok) {
-      throw new Error(`Backend error: ${response.statusText}`)
+      if (!response.ok) throw new Error("CSV Prediction Failed")
+
+      // The response will be a file download
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = "predicted_analysis.csv"
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error(t.csvAlertError, err)
     }
-
-    const result = await response.json()
-    alert(`✅ Backend connected!\nMessage: ${result.message || "Upload success"}`)
-  } catch (err: any) {
-    alert(`❌ Upload failed: ${err.message}`)
   }
-}
 
   // This function would handle saving data to a local storage solution like IndexedDB
   const handleSaveAndSend = async () => {
     // Logic to save data locally first.
     // Example: saveToIndexedDB(formData);
-    alert("Data saved locally and will be synced later.");
+    console.log("Data saved locally and will be synced later.");
     // This part would ideally be an async function that sends data when online.
     // For now, it's a placeholder.
   };
@@ -544,13 +559,13 @@ export default function DataCollectionPage() {
                       {t.takePhoto}
                     </Label>
                     <input
-  id="photo-upload"
-  type="file"
-  accept="image/*"
-  capture={"camera" as any}
-  className="hidden"
-  disabled={!canPerformActions(user)}
-/>
+                      id="photo-upload"
+                      type="file"
+                      accept="image/*"
+                      capture={"camera" as any}
+                      className="hidden"
+                      disabled={!canPerformActions(user)}
+                    />
 
                   </div>
 
