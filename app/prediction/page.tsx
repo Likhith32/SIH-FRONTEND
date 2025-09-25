@@ -10,7 +10,18 @@ import Link from "next/link"
 import { useHealth } from "@/lib/health-context"
 import { getPredictionsFromAPI } from "../lib/ai-api"
 
-
+// We'll create a mock function for the backend API for demonstration purposes,
+// so you can run this code locally and see the fallback in action.
+// In a real application, this would be an actual API call.
+// For this example, it's set to always fail.
+const getPredictionsFromAPI_mock = (data: any): Promise<PredictionResult[]> => {
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      // Simulate a network or backend error
+      reject(new Error("Failed to connect to AI backend."));
+    }, 1500);
+  });
+};
 
 
 interface PredictionResult {
@@ -156,30 +167,40 @@ export default function PredictionPage() {
           },
         ]
   }
-const runPredictionAnalysis = async () => {
-  if (healthData.length === 0) return alert("No health data available!")
 
-  setIsAnalyzing(true)
-  setAnalysisComplete(false)
-  setPredictions([])
-
-  try {
-    const newPredictions = await getPredictionsFromAPI(healthData)
-
-    // Optional: show one-by-one for animation
-    for (let i = 0; i < newPredictions.length; i++) {
+  // Helper function to animate predictions one by one
+  const animatePredictions = async (predictionList: PredictionResult[]) => {
+    for (let i = 0; i < predictionList.length; i++) {
       await new Promise((resolve) => setTimeout(resolve, 500))
-      setPredictions((prev) => [...prev, newPredictions[i]])
+      setPredictions((prev) => [...prev, predictionList[i]])
+    }
+    setAnalysisComplete(true)
+  }
+
+  const runPredictionAnalysis = async () => {
+    // Replaced the alert with a console log for a better user experience
+    if (healthData.length === 0) {
+      console.warn("No health data available. Please add some data first.")
+      return
     }
 
-    setAnalysisComplete(true)
-  } catch (err) {
-    console.error(err)
-    alert("Error fetching predictions from AI backend")
-  } finally {
-    setIsAnalyzing(false)
+    setIsAnalyzing(true)
+    setAnalysisComplete(false)
+    setPredictions([])
+
+    try {
+      // Primary flow: Attempt to get predictions from the AI backend
+      const newPredictions = await getPredictionsFromAPI(healthData)
+      await animatePredictions(newPredictions)
+    } catch (err) {
+      // Fallback flow: Use the local prediction generation if the backend fails
+      console.warn("Backend down, falling back to local predictions.")
+      const localPredictions = generatePredictions()
+      await animatePredictions(localPredictions)
+    } finally {
+      setIsAnalyzing(false)
+    }
   }
-}
 
   const getRiskColor = (riskLevel: string) => {
     switch (riskLevel) {
