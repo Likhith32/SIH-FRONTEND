@@ -27,34 +27,22 @@ import Link from "next/link"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts"
 import { useHealth } from "@/lib/health-context"
 
-// ThingSpeak configuration
-const THINGSPEAK_CHANNEL_ID = "3088862"
-const THINGSPEAK_WRITE_KEY = "OSCHVL2LLQXPHABW"
-const FIELDS = {
-  ph: 1,
-  turbidity: 2,
-  dissolvedOxygen: 3,
-  coliformCount: 4,
-}
+const API_BASE = "https://sih-backend-vjdd.onrender.com"
 
 export default function SensorsPage() {
-  const { iotSensors, updateSensorData, addManualSensorReading, addAlert } = useHealth()
+  const { iotSensors, updateSensorData, addAlert } = useHealth()
   const [selectedSensor, setSelectedSensor] = useState<string | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [manualValue, setManualValue] = useState("")
   const [showManualInput, setShowManualInput] = useState(false)
 
-  // Fetch latest ThingSpeak reading for a field
-  const fetchLatestReading = async (sensorId: string, field: number) => {
+  // New fetchLatestReading function to call the backend
+  const fetchLatestReading = async (sensorId: string) => {
     try {
-      const res = await fetch(
-        `https://api.thingspeak.com/channels/${THINGSPEAK_CHANNEL_ID}/fields/${field}.json?results=1`
-      )
+      const res = await fetch(`${API_BASE}/api/sensors/${sensorId}/latest`)
       const data = await res.json()
-      if (data.feeds && data.feeds.length > 0) {
-        const latestValue = parseFloat(data.feeds[0][`field${field}`])
-        const timestamp = data.feeds[0].created_at
-        if (!isNaN(latestValue)) updateSensorData(sensorId, latestValue, timestamp)
+      if (data.value && data.timestamp) {
+        updateSensorData(sensorId, data.value, data.timestamp)
       }
     } catch (err) {
       console.error(`Error fetching latest reading for sensor ${sensorId}:`, err)
@@ -65,15 +53,13 @@ export default function SensorsPage() {
   useEffect(() => {
     const interval = setInterval(() => {
       iotSensors.forEach((sensor) => {
-        if (sensor.status !== "offline" && sensor.fieldNumber)
-          fetchLatestReading(sensor.id, sensor.fieldNumber)
+        if (sensor.status !== "offline") fetchLatestReading(sensor.id)
       })
     }, 30000)
 
     // Initial fetch
     iotSensors.forEach((sensor) => {
-      if (sensor.status !== "offline" && sensor.fieldNumber)
-        fetchLatestReading(sensor.id, sensor.fieldNumber)
+      if (sensor.status !== "offline") fetchLatestReading(sensor.id)
     })
 
     return () => clearInterval(interval)
@@ -83,32 +69,40 @@ export default function SensorsPage() {
     setIsRefreshing(true)
     await Promise.all(
       iotSensors.map((sensor) => {
-        if (sensor.fieldNumber) return fetchLatestReading(sensor.id, sensor.fieldNumber)
-        return Promise.resolve()
+        return fetchLatestReading(sensor.id)
       })
     )
     setIsRefreshing(false)
   }
 
-  const handleManualReading = () => {
+  // New handleManualReading function to post to the backend
+  const handleManualReading = async () => {
     if (selectedSensor && manualValue) {
       const value = Number.parseFloat(manualValue)
       if (!isNaN(value)) {
-        addManualSensorReading(selectedSensor, value)
-        setManualValue("")
-        setShowManualInput(false)
+        try {
+          const res = await fetch(`${API_BASE}/api/sensors/${selectedSensor}/manual`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ value }),
+          })
+          const saved = await res.json()
+          updateSensorData(selectedSensor, saved.value, saved.timestamp)
 
-        const sensor = iotSensors.find((s) => s.id === selectedSensor)
-        if (sensor) {
           addAlert({
             title: "Manual Reading Added",
-            message: `Manual reading of ${value} ${sensor.unit} added for ${sensor.name}`,
+            message: `Manual reading of ${saved.value} ${saved.unit} added for ${saved.name}`,
             severity: "low",
-            location: sensor.location,
+            location: saved.location,
             status: "active",
             channels: ["Dashboard"],
             source: "manual",
           })
+
+          setManualValue("")
+          setShowManualInput(false)
+        } catch (err) {
+          console.error("Failed to save manual reading:", err)
         }
       }
     }
