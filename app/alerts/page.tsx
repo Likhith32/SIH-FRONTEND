@@ -15,7 +15,7 @@ import Link from "next/link"
 import { useHealth } from "@/lib/health-context"
 
 // In a real app, replace this with your actual backend URL
-const API_BASE = "http://localhost:3001" 
+const API_BASE = "https://sih-backend-vjdd.onrender.com"
 
 export default function AlertsPage() {
   const [newAlert, setNewAlert] = useState({
